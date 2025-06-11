@@ -1,0 +1,141 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: audiobook_postgres
+    environment:
+      POSTGRES_DB: audiobook_db
+      POSTGRES_USER: audiobook_user
+      POSTGRES_PASSWORD: audiobook_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - audiobook_network
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: audiobook_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - audiobook_network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: audiobook_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://audiobook_user:audiobook_password@postgres:5432/audiobook_db
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - SECRET_KEY=your-super-secret-key-here-change-in-production
+      - ALLOWED_HOSTS=*
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - MAX_FILE_SIZE=104857600
+      - UPLOAD_DIR=uploads
+      - AUDIO_OUTPUT_DIR=audio_output
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./backend:/app
+      - ./uploads:/app/uploads
+      - ./audio_output:/app/audio_output
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - audiobook_network
+    restart: unless-stopped
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # Celery Worker for Background Tasks
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: audiobook_celery_worker
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://audiobook_user:audiobook_password@postgres:5432/audiobook_db
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - SECRET_KEY=your-super-secret-key-here-change-in-production
+      - ALLOWED_HOSTS=*
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./backend:/app
+      - ./uploads:/app/uploads
+      - ./audio_output:/app/audio_output
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - audiobook_network
+    restart: unless-stopped
+    command: celery -A app.core.celery:celery_app worker --loglevel=info
+
+  # Celery Flower for Monitoring
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: audiobook_flower
+    ports:
+      - "5555:5555"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - SECRET_KEY=your-super-secret-key-here-change-in-production
+      - ALLOWED_HOSTS=*
+      - LOG_LEVEL=INFO
+    depends_on:
+      - redis
+      - celery_worker
+    networks:
+      - audiobook_network
+    restart: unless-stopped
+    command: celery -A app.core.celery:celery_app flower --port=5555
+
+  # pgAdmin for Database Management (Optional)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: audiobook_pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@audiobook.com
+      PGADMIN_DEFAULT_PASSWORD: admin123
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    networks:
+      - audiobook_network
+    restart: unless-stopped
+    profiles:
+      - admin
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  audiobook_network:
+    driver: bridge 

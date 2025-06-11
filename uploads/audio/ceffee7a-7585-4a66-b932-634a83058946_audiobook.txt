@@ -1,0 +1,5 @@
+Demo Audio Content:
+This is a demo audiobook for: The Adventures of AI. The book contains 428 words.
+
+Original Text:
+--- Page 1 --- The Adventures of AI: A Test Audiobook By: Audio Book AI Assistant Chapter 1: The Beginning Once upon a time, in a digital realm far, far away, there lived an artificial intelligence named Claude. Claude had a special gift - the ability to transform written words into beautiful spoken stories. This is the tale of how Claude learned to create audiobooks that could touch the hearts of listeners everywhere. The journey began when Claude discovered that many people loved stories but s...

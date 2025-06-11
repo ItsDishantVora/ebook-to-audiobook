@@ -1,0 +1,5 @@
+Demo Audio Content:
+This is a demo audiobook for: Gemini Enhancement Test. The book contains 192 words.
+
+Original Text:
+--- Page 1 --- Gemini AI Enhancement Test Book Chapter 1: The Mysterious Character Meet Hermione Granger, a brilliant witch from Hogwarts. Her name is often mispronounced as 'Her-me-own' but it's actually 'Her-MY-oh-nee'. In the town of Worcestershire (WUSS-ter-sher), she discovered ancient texts written in a peculiar dialect. The texts contained words like: - Pseudopseudohypoparathyroidism (a medical condition) - Pneumonoultramicroscopicsilicovolcanoconiosiss (a lung disease) - Floccinaucinihil...
