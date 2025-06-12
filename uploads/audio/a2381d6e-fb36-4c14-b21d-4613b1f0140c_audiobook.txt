@@ -1,5 +1,0 @@
-Demo Audio Content:
-This is a demo audiobook for: Sample AudioBook Test. The book contains 67 words.
-
-Original Text:
---- Page 1 --- Sample Audio Book for Testing Chapter 1: Introduction This is a test book for our audiobook converter. The quick brown fox jumps over the lazy dog. Chapter 2: AI and Technology Artificial intelligence is transforming how we create and consume content like audiobooks. Chapter 3: The Future The future of audiobooks is bright with AI technology. This concludes our sample book for testing....

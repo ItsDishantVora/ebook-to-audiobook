@@ -1,0 +1,39 @@
+# Core dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+streamlit==1.28.1
+python-dotenv==1.0.0
+
+# Text extraction
+PyPDF2==3.0.1
+pdfplumber==0.10.3
+ebooklib==0.18
+beautifulsoup4==4.12.2
+lxml==4.9.3
+
+# LLM Integration
+google-generativeai==0.3.2
+
+# TTS engines
+gTTS==2.4.0
+edge-tts==6.1.9
+pyttsx3==2.90
+
+# Audio processing
+pydub==0.25.1
+ffmpeg-python==0.2.0
+
+# Async and HTTP
+aiofiles==23.2.1
+httpx==0.25.2
+asyncio-throttle==1.0.2
+
+# Utilities
+tqdm==4.66.1
+click==8.1.7
+rich==13.7.0
+
+# Development
+pytest==7.4.3
+black==23.11.0
+isort==5.12.0 

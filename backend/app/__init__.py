@@ -1,3 +1,0 @@
-"""
-AudioBook Converter Application.
-""" 
