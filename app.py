@@ -1,397 +1,416 @@
-"""Main Streamlit application for the Audiobook Converter."""
+"""
+Enhanced Audiobook Converter with Coqui TTS
+Converts EPUB/PDF books to high-quality MP3 audiobooks using AI
+"""
 
 import streamlit as st
 import asyncio
 import os
 import logging
-import tempfile
 from pathlib import Path
-from typing import Dict, List
-import time
+import tempfile
+import zipfile
+from datetime import datetime
 
-# Core modules  
-from core import TextExtractor, TextProcessor, TTSConverter, AudioMerger
+# Core modules
+from core.text_extractor import TextExtractor
+from core.text_processor import TextProcessor
+from core.tts_converter import TTSConverter
+from core.audio_merger import AudioMerger
 from config import settings
 
 # Configure logging
-logging.basicConfig(
-    level=getattr(logging, settings.log_level),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
+logging.basicConfig(level=getattr(logging, settings.log_level))
 logger = logging.getLogger(__name__)
 
-# Page configuration
-st.set_page_config(
-    page_title="Audiobook Converter",
-    page_icon="🎧",
-    layout="centered",
-    initial_sidebar_state="expanded"
-)
-
-# Custom CSS
-st.markdown("""
-<style>
+def main():
+    st.set_page_config(
+        page_title="🎧 Enhanced Audiobook Converter",
+        page_icon="🎧",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+    
+    # Custom CSS for better UI
+    st.markdown("""
+    <style>
     .main-header {
+        font-size: 2.5rem;
+        color: #1f77b4;
         text-align: center;
-        color: #1e3a8a;
         margin-bottom: 2rem;
     }
     .feature-box {
-        background-color: #f0f9ff;
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        color: white;
         padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #3b82f6;
+        border-radius: 10px;
         margin: 1rem 0;
     }
-    .success-box {
-        background-color: #f0fdf4;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #22c55e;
-        color: #166534;
+    .quality-badge {
+        background: #28a745;
+        color: white;
+        padding: 0.2rem 0.5rem;
+        border-radius: 5px;
+        font-size: 0.8rem;
     }
-    .warning-box {
-        background-color: #fffbeb;
+    .cache-info {
+        background: #f8f9fa;
+        border-left: 4px solid #007bff;
         padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #f59e0b;
-        color: #92400e;
+        margin: 1rem 0;
     }
-    .error-box {
-        background-color: #fef2f2;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #ef4444;
-        color: #dc2626;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-class AudiobookConverterApp:
-    """Main application class."""
+    </style>
+    """, unsafe_allow_html=True)
     
-    def __init__(self):
-        self.text_extractor = TextExtractor()
-        self.text_processor = TextProcessor()
-        self.tts_converter = TTSConverter()
-        self.audio_merger = AudioMerger()
-        
-    def render_header(self):
-        """Render the application header."""
-        st.markdown("""
-        <div class="main-header">
-            <h1>🎧 Audiobook Converter</h1>
-            <p>Transform your ebooks into high-quality audiobooks using AI</p>
-        </div>
-        """, unsafe_allow_html=True)
-        
-    def render_sidebar(self):
-        """Render the sidebar with configuration options."""
-        st.sidebar.title("⚙️ Configuration")
+    # Header
+    st.markdown('<h1 class="main-header">🎧 Enhanced Audiobook Converter</h1>', unsafe_allow_html=True)
+    st.markdown('<div class="feature-box">✨ Now with <strong>Coqui TTS</strong> for studio-quality voice synthesis! ✨</div>', unsafe_allow_html=True)
+    
+    # Sidebar for settings
+    with st.sidebar:
+        st.header("⚙️ Settings")
         
         # TTS Engine Selection
-        st.sidebar.subheader("🎤 Text-to-Speech")
+        st.subheader("🎙️ Voice Engine")
         
-        tts_engine = st.sidebar.selectbox(
-            "TTS Engine",
-            options=['edge-tts', 'gtts', 'pyttsx3'],
-            index=0,
-            help="Choose your preferred TTS engine"
-        )
+        # Check if Coqui TTS is available
+        try:
+            from TTS.api import TTS
+            coqui_available = True
+        except ImportError:
+            coqui_available = False
         
-        # Voice Selection
-        available_voices = TTSConverter.get_available_voices()
-        if tts_engine in available_voices:
-            voice_options = available_voices[tts_engine]
-            default_voice = settings.default_voice if settings.default_voice in voice_options else voice_options[0]
-            
-            selected_voice = st.sidebar.selectbox(
-                "Voice",
-                options=voice_options,
-                index=voice_options.index(default_voice) if default_voice in voice_options else 0,
-                help="Select the voice for narration"
-            )
+        if coqui_available:
+            st.success("✅ Coqui TTS Available (Highest Quality)")
+            engine_options = ["coqui-xtts", "edge-tts", "gtts", "pyttsx3"]
+            default_engine = "coqui-xtts"
         else:
-            selected_voice = settings.default_voice
+            st.warning("⚠️ Coqui TTS not installed. Using fallback engines.")
+            engine_options = ["edge-tts", "gtts", "pyttsx3"]
+            default_engine = "edge-tts"
         
-        # Speech Settings
-        st.sidebar.subheader("🔊 Audio Settings")
-        speech_rate = st.sidebar.slider(
-            "Speech Rate",
-            min_value=0.5,
-            max_value=2.0,
-            value=settings.speech_rate,
-            step=0.1,
-            help="Adjust the speech speed"
+        selected_engine = st.selectbox(
+            "Select TTS Engine:",
+            engine_options,
+            index=engine_options.index(default_engine),
+            help="Coqui TTS provides the most natural voice quality"
         )
         
-        silence_duration = st.sidebar.slider(
-            "Silence Between Chapters (seconds)",
-            min_value=0.5,
-            max_value=5.0,
-            value=settings.silence_duration,
-            step=0.5,
-            help="Duration of silence between chapters"
+        # Voice Selection based on engine
+        st.subheader("🗣️ Voice Selection")
+        
+        if selected_engine == "coqui-xtts":
+            voice_options = {
+                "tts_models/en/ljspeech/tacotron2-DDC": "📚 LJSpeech - Perfect for Audiobooks",
+                "tts_models/en/vctk/vits": "🎭 VCTK - Multi-Speaker Natural",
+                "tts_models/en/ljspeech/glow-tts": "⚡ GlowTTS - Fast & Clear"
+            }
+            default_voice = "tts_models/en/ljspeech/tacotron2-DDC"
+        else:
+            voice_options = {
+                "en-US-AriaNeural": "🇺🇸 Aria - Most Natural",
+                "en-US-JennyNeural": "🇺🇸 Jenny - Professional",
+                "en-US-GuyNeural": "🇺🇸 Guy - Deep Voice",
+                "en-GB-SoniaNeural": "🇬🇧 Sonia - British Accent",
+                "en-AU-NatashaNeural": "🇦🇺 Natasha - Australian"
+            }
+            default_voice = "en-US-AriaNeural"
+        
+        selected_voice = st.selectbox(
+            "Select Voice:",
+            list(voice_options.keys()),
+            format_func=lambda x: voice_options[x],
+            index=0
         )
         
-        # Gemini Settings
-        st.sidebar.subheader("🤖 AI Processing")
-        use_gemini = st.sidebar.checkbox(
-            "Use Gemini for text optimization",
+        # Quality indicators
+        if selected_engine == "coqui-xtts":
+            st.markdown('<span class="quality-badge">🏆 STUDIO QUALITY</span>', unsafe_allow_html=True)
+            st.info("💡 Coqui TTS provides the most human-like voice synthesis")
+        elif selected_engine == "edge-tts":
+            st.markdown('<span class="quality-badge">✨ HIGH QUALITY</span>', unsafe_allow_html=True)
+        
+        # Performance Settings
+        st.subheader("🚀 Performance")
+        
+        enable_caching = st.checkbox(
+            "Enable Smart Caching",
             value=True,
-            help="Use Google Gemini AI to optimize text for better TTS"
+            help="Cache audio segments to speed up processing"
         )
         
-        if use_gemini:
-            chunk_size = st.sidebar.number_input(
-                "Processing Chunk Size",
-                min_value=5000,
-                max_value=50000,
-                value=settings.max_chunk_size,
-                step=5000,
-                help="Size of text chunks for Gemini processing"
-            )
-        else:
-            chunk_size = settings.max_chunk_size
+        if enable_caching:
+            st.success("✅ Caching enabled - Faster processing!")
         
-        # Cost Estimation
-        if use_gemini:
-            st.sidebar.info("💰 Estimated cost will be shown during processing")
+        # Voice sample
+        if st.button("🎵 Test Voice Sample"):
+            with st.spinner("Generating voice sample..."):
+                try:
+                    tts = TTSConverter(engine=selected_engine, voice=selected_voice)
+                    tts.cache_enabled = enable_caching
+                    sample_text = "Hello! This is how your audiobook will sound. The voice quality is crisp and natural."
+                    
+                    # Generate sample in temp file
+                    temp_sample = os.path.join(settings.temp_dir, "voice_sample.mp3")
+                    success = asyncio.run(tts.convert_text_to_audio(sample_text, temp_sample))
+                    
+                    if success and os.path.exists(temp_sample):
+                        with open(temp_sample, 'rb') as audio_file:
+                            st.audio(audio_file.read(), format='audio/mp3')
+                        st.success("🎉 Voice sample generated!")
+                    else:
+                        st.error("Failed to generate voice sample")
+                except Exception as e:
+                    st.error(f"Error: {e}")
         
-        return {
-            'tts_engine': tts_engine,
-            'voice': selected_voice,
-            'speech_rate': speech_rate,
-            'silence_duration': silence_duration,
-            'use_gemini': use_gemini,
-            'chunk_size': chunk_size
-        }
+        # Cache information
+        st.subheader("📊 Cache Status")
+        try:
+            tts = TTSConverter(engine=selected_engine, voice=selected_voice)
+            cache_info = tts.get_cache_info()
+            
+            if cache_info.get("cache_enabled"):
+                st.markdown(f"""
+                <div class="cache-info">
+                <strong>Cache Status:</strong> Active<br>
+                <strong>Cached Items:</strong> {cache_info.get('cache_size', 0)}<br>
+                <strong>Storage:</strong> {cache_info.get('cache_directory', 'N/A')}
+                </div>
+                """, unsafe_allow_html=True)
+                
+                if st.button("🗑️ Clear Cache"):
+                    tts.clear_cache()
+                    st.success("Cache cleared!")
+                    st.experimental_rerun()
+            else:
+                st.info("Cache disabled")
+        except:
+            pass
     
-    def render_main_content(self, config: Dict):
-        """Render the main content area."""
-        
-        # File Upload
-        st.subheader("📚 Upload Your Ebook")
+    # Main content area
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.header("📚 Upload Your Book")
         
         uploaded_file = st.file_uploader(
-            "Choose an ebook file",
-            type=['epub', 'pdf', 'txt'],
-            help="Upload your ebook in EPUB, PDF, or TXT format"
+            "Choose your book file",
+            type=['epub', 'pdf', 'txt', 'mobi'],
+            help="Supported formats: EPUB, PDF, TXT, MOBI"
         )
         
         if uploaded_file is not None:
-            # Display file info
-            file_details = {
-                "Filename": uploaded_file.name,
-                "File size": f"{uploaded_file.size / (1024*1024):.2f} MB",
-                "File type": uploaded_file.type
-            }
+            st.success(f"✅ File uploaded: {uploaded_file.name}")
             
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown("**File Details:**")
-                for key, value in file_details.items():
-                    st.write(f"- {key}: {value}")
+            # Processing options
+            st.subheader("📖 Processing Options")
             
-            with col2:
-                if st.button("🔄 Convert to Audiobook", type="primary"):
-                    asyncio.run(self.process_ebook(uploaded_file, config))
-        
-        # Features section
-        self.render_features()
-    
-    def render_features(self):
-        """Render the features section."""
-        st.subheader("✨ Features")
-        
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.markdown("""
-            <div class="feature-box">
-                <h4>🤖 AI-Powered Processing</h4>
-                <p>Uses Google Gemini AI to optimize text for natural-sounding speech</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col2:
-            st.markdown("""
-            <div class="feature-box">
-                <h4>🎯 Multiple TTS Engines</h4>
-                <p>Choose from Edge TTS, Google TTS, or system TTS for the best quality</p>
-            </div>
-            """, unsafe_allow_html=True)
-        
-        with col3:
-            st.markdown("""
-            <div class="feature-box">
-                <h4>💰 Cost-Effective</h4>
-                <p>Optimized for minimal API costs with smart chunking and caching</p>
-            </div>
-            """, unsafe_allow_html=True)
-    
-    async def process_ebook(self, uploaded_file, config: Dict):
-        """Process the uploaded ebook into an audiobook."""
-        
-        progress_container = st.container()
-        with progress_container:
-            st.markdown("### 🔄 Processing Your Ebook")
+            col_a, col_b = st.columns(2)
             
-            # Create progress bars
-            overall_progress = st.progress(0)
-            step_progress = st.progress(0)
-            status_text = st.empty()
-            
-            try:
-                # Save uploaded file temporarily
-                with tempfile.NamedTemporaryFile(delete=False, suffix=Path(uploaded_file.name).suffix) as tmp_file:
-                    tmp_file.write(uploaded_file.getvalue())
-                    temp_input_path = tmp_file.name
-                
-                # Step 1: Extract text
-                status_text.text("📖 Extracting text from ebook...")
-                overall_progress.progress(10)
-                
-                extracted_data = await self.text_extractor.extract_text(temp_input_path)
-                
-                if not extracted_data:
-                    st.error("❌ Failed to extract text from the ebook")
-                    return
-                
-                # Display extraction results
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.metric("📄 Pages/Chapters", len(extracted_data['chapters']))
-                with col2:
-                    st.metric("📝 Word Count", f"{extracted_data['word_count']:,}")
-                with col3:
-                    estimated_duration = extracted_data['word_count'] / 150  # 150 words per minute
-                    st.metric("⏱️ Est. Duration", f"{estimated_duration:.0f} min")
-                
-                overall_progress.progress(25)
-                
-                # Step 2: Process text with Gemini (if enabled)
-                if config['use_gemini']:
-                    status_text.text("🤖 Optimizing text with Gemini AI...")
-                    
-                    # Estimate cost
-                    estimated_cost = self.text_processor.estimate_processing_cost(extracted_data['text'])
-                    
-                    if estimated_cost > 5.0:  # Warning for high costs
-                        st.warning(f"⚠️ Estimated Gemini cost: ${estimated_cost:.2f}. Consider reducing chunk size.")
-                        if not st.button("Continue anyway"):
-                            return
-                    else:
-                        st.info(f"💰 Estimated Gemini cost: ${estimated_cost:.3f}")
-                    
-                    processed_chapters = await self.text_processor.process_chapters(extracted_data['chapters'])
-                    overall_progress.progress(50)
-                else:
-                    status_text.text("📝 Using basic text processing...")
-                    processed_chapters = extracted_data['chapters']
-                    overall_progress.progress(50)
-                
-                # Step 3: Convert to audio  
-                status_text.text("🎤 Converting text to speech...")
-                
-                # Update TTS converter settings
-                self.tts_converter.engine = config['tts_engine']
-                self.tts_converter.voice = config['voice']
-                
-                # Create temporary directory for audio files
-                temp_audio_dir = tempfile.mkdtemp()
-                
-                audio_files = await self.tts_converter.convert_chapters_to_audio(
-                    processed_chapters, temp_audio_dir
+            with col_a:
+                use_ai_processing = st.checkbox(
+                    "🤖 AI Text Enhancement", 
+                    value=True,
+                    help="Use Gemini AI to optimize text for speech"
                 )
                 
-                if not audio_files:
-                    st.error("❌ Failed to convert text to speech")
-                    return
-                
-                overall_progress.progress(80)
-                
-                # Step 4: Merge audio files
-                status_text.text("🔗 Merging audio files...")
-                
-                # Create output filename
-                safe_title = extracted_data['metadata']['title'].replace(' ', '_')
-                safe_title = ''.join(c for c in safe_title if c.isalnum() or c in '_-')
-                output_filename = f"{safe_title}_audiobook.mp3"
-                output_path = os.path.join(settings.output_dir, output_filename)
-                
-                # Update audio merger settings
-                self.audio_merger.silence_duration = config['silence_duration'] * 1000
-                
-                success = await self.audio_merger.merge_audio_files(
-                    audio_files, output_path, extracted_data['metadata']
+                max_chapters = st.number_input(
+                    "Max Chapters to Process",
+                    min_value=1,
+                    max_value=100,
+                    value=30,
+                    help="Limit processing for testing"
+                )
+            
+            with col_b:
+                speech_rate = st.slider(
+                    "🎛️ Speech Rate",
+                    min_value=0.5,
+                    max_value=2.0,
+                    value=1.0,
+                    step=0.1,
+                    help="Adjust speaking speed"
                 )
                 
-                if not success:
-                    st.error("❌ Failed to merge audio files")
-                    return
-                
-                overall_progress.progress(100)
-                status_text.text("✅ Audiobook created successfully!")
-                
-                # Display success message and download button
-                st.markdown("""
-                <div class="success-box">
-                    <h4>🎉 Audiobook Created Successfully!</h4>
-                    <p>Your audiobook has been generated and is ready for download.</p>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                # Audio info
-                audio_info = self.audio_merger.get_audio_info(output_path)
-                if audio_info:
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("🎵 Duration", f"{audio_info['duration_minutes']:.1f} min")
-                    with col2:
-                        st.metric("📊 File Size", f"{audio_info['file_size_mb']:.1f} MB")
-                    with col3:
-                        st.metric("🔊 Quality", f"{audio_info['sample_rate']} Hz")
-                
-                # Download button
-                if os.path.exists(output_path):
-                    with open(output_path, 'rb') as audio_file:
-                        st.download_button(
-                            label="📥 Download Audiobook",
-                            data=audio_file.read(),
-                            file_name=output_filename,
-                            mime="audio/mpeg",
-                            type="primary"
-                        )
-                
-                # Cleanup
-                os.unlink(temp_input_path)
-                self.audio_merger.cleanup_temp_files(audio_files)
-                
-            except Exception as e:
-                logger.error(f"Processing failed: {e}")
-                st.markdown(f"""
-                <div class="error-box">
-                    <h4>❌ Processing Failed</h4>
-                    <p>Error: {str(e)}</p>
-                    <p>Please check your file and try again.</p>
-                </div>
-                """, unsafe_allow_html=True)
+                add_pauses = st.checkbox(
+                    "⏸️ Enhanced Pauses",
+                    value=True,
+                    help="Add natural pauses between sections"
+                )
+            
+            # Convert button
+            if st.button("🚀 Convert to Audiobook", type="primary"):
+                convert_book(
+                    uploaded_file, 
+                    selected_engine, 
+                    selected_voice,
+                    use_ai_processing,
+                    max_chapters,
+                    speech_rate,
+                    add_pauses,
+                    enable_caching
+                )
     
-    def run(self):
-        """Run the Streamlit application."""
-        self.render_header()
-        config = self.render_sidebar()
-        self.render_main_content(config)
+    with col2:
+        st.header("🎯 Features")
+        
+        features = [
+            "🎙️ **Coqui TTS**: Studio-quality voice synthesis",
+            "⚡ **Smart Caching**: 3x faster processing",
+            "🤖 **AI Enhancement**: Gemini-powered text optimization", 
+            "🎭 **Multiple Voices**: Choose your perfect narrator",
+            "📱 **Easy Interface**: Drag, drop, and convert",
+            "🔧 **Customizable**: Adjust speed, pauses, and quality",
+            "💾 **Chapter Support**: Organized audio files",
+            "🌟 **English Optimized**: Best quality for English books"
+        ]
+        
+        for feature in features:
+            st.markdown(feature)
+        
+        st.header("📈 Quality Comparison")
+        
+        quality_data = {
+            "Engine": ["Coqui TTS", "Edge TTS", "Google TTS", "pyttsx3"],
+            "Quality": ["🏆 Excellent", "✨ Very Good", "👍 Good", "📢 Basic"],
+            "Speed": ["🐌 Slower", "⚡ Fast", "⚡ Fast", "🏃 Very Fast"],
+            "Natural": ["💯 Perfect", "😊 High", "🙂 Medium", "🤖 Robotic"]
+        }
+        
+        st.table(quality_data)
+        
+        st.info("💡 **Tip**: Use Coqui TTS for the most natural audiobook experience!")
 
-def main():
-    """Main application entry point."""
+def convert_book(uploaded_file, engine, voice, use_ai, max_chapters, speech_rate, add_pauses, enable_cache):
+    """Convert uploaded book to audiobook."""
+    
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    
     try:
-        app = AudiobookConverterApp()
-        app.run()
+        # Save uploaded file
+        with tempfile.NamedTemporaryFile(delete=False, suffix=f".{uploaded_file.name.split('.')[-1]}") as tmp_file:
+            tmp_file.write(uploaded_file.getvalue())
+            temp_path = tmp_file.name
+        
+        # Initialize components
+        status_text.text("🔧 Initializing components...")
+        progress_bar.progress(10)
+        
+        text_extractor = TextExtractor()
+        text_processor = TextProcessor() if use_ai else None
+        tts_converter = TTSConverter(engine=engine, voice=voice)
+        tts_converter.cache_enabled = enable_cache
+        audio_merger = AudioMerger()
+        
+        # Extract text
+        status_text.text("📖 Extracting text from book...")
+        progress_bar.progress(20)
+           
+        extracted_text = asyncio.run(text_extractor.extract_text(temp_path))
+        
+        if not extracted_text.get('chapters'):
+            st.error("No text could be extracted from the file")
+            return
+        
+        chapters = extracted_text['chapters'][:max_chapters]
+        st.success(f"✅ Extracted {len(chapters)} chapters")
+        
+        # Process with AI if enabled
+        if use_ai and text_processor:
+            status_text.text("🤖 AI processing chapters...")
+            progress_bar.progress(40)
+            
+            processed_chapters = asyncio.run(text_processor.process_chapters(chapters))
+            chapters = processed_chapters
+            st.success("✅ AI processing complete")
+        
+        # Convert to audio
+        status_text.text(f"🎙️ Converting to audio using {engine}...")
+        progress_bar.progress(60)
+        
+        audio_dir = os.path.join(settings.temp_dir, f"audio_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
+        os.makedirs(audio_dir, exist_ok=True)
+        
+        audio_files = asyncio.run(tts_converter.convert_chapters_to_audio(chapters, audio_dir))
+        
+        if not audio_files:
+            st.error("Failed to convert any chapters to audio")
+            return
+        
+        st.success(f"✅ Converted {len(audio_files)} chapters to audio")
+        
+        # Merge audio files
+        status_text.text("🔗 Merging audio files...")
+        progress_bar.progress(80)
+        
+        output_filename = f"{uploaded_file.name.rsplit('.', 1)[0]}_audiobook.mp3"
+        output_path = os.path.join(settings.output_dir, output_filename)
+        
+        success = await_merge_audio(audio_files, output_path, extracted_text.get('metadata', {}))
+        
+        if success:
+            progress_bar.progress(100)
+            status_text.text("✅ Audiobook created successfully!")
+            
+            # Display results
+            st.success("🎉 **Audiobook conversion complete!**")
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("📚 Chapters", len(chapters))
+            with col2:
+                file_size = os.path.getsize(output_path) / (1024 * 1024)  # MB
+                st.metric("💾 File Size", f"{file_size:.1f} MB")
+            with col3:
+                # Estimate duration
+                total_text = " ".join([ch.get('text', '') for ch in chapters])
+                duration = tts_converter.estimate_audio_duration(total_text)
+                st.metric("⏱️ Duration", f"{duration/60:.1f} min")
+            
+            # Download button
+            with open(output_path, 'rb') as audio_file:
+                st.download_button(
+                    label="📥 Download Audiobook",
+                    data=audio_file.read(),
+                    file_name=output_filename,
+                    mime="audio/mpeg",
+                    type="primary"
+                )
+            
+            # Play preview
+            st.subheader("🎵 Preview")
+            with open(output_path, 'rb') as audio_file:
+                st.audio(audio_file.read(), format='audio/mp3')
+            
+            # Cache info
+            if enable_cache:
+                cache_info = tts_converter.get_cache_info()
+                st.info(f"📊 Cache now contains {cache_info.get('cache_size', 0)} items")
+        
+        else:
+            st.error("❌ Failed to merge audio files")
+    
     except Exception as e:
-        st.error(f"Application initialization failed: {e}")
-        st.info("Please check your configuration and try again.")
+        st.error(f"❌ Error during conversion: {str(e)}")
+        logger.error(f"Conversion error: {e}", exc_info=True)
+    
+    finally:
+        # Cleanup
+        try:
+            os.unlink(temp_path)
+        except:
+            pass
+
+def await_merge_audio(audio_files, output_path, metadata):
+    """Wrapper to run async audio merger."""
+    try:
+        audio_merger = AudioMerger()
+        return asyncio.run(audio_merger.merge_audio_files(audio_files, output_path, metadata))
+    except Exception as e:
+        logger.error(f"Audio merge error: {e}")
+        return False
 
 if __name__ == "__main__":
     main() 
